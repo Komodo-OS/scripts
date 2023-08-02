@@ -62,13 +62,242 @@ DEVICE="$device_codename"
 
 path_ccache="${CDIR}/.ccache"
 
-. ${CDIR}etc/utlis.sh
-. ${CDIR}etc/telegram.sh
-. ${CDIR}etc/checker.sh
-. ${CDIR}etc/progress.sh
-. ${CDIR}etc/message.sh
+################################################################
+# my Time
+export TZ=":Asia/Jakarta"
+# Colors makes things beautiful
+export TERM=xterm
 
-#######
+red=$(tput setaf 1)             #  red
+grn=$(tput setaf 2)             #  green
+blu=$(tput setaf 4)             #  blue
+cya=$(tput setaf 6)             #  cyan
+txtrst=$(tput sgr0)             #  Reset
+
+# Time function
+function timeStart() {
+	DATELOG=$(date "+%H%M-%d%m%Y")
+	BUILD_START=$(date +"%s")
+	DATE=`date`
+}
+
+function timeEnd() {
+	BUILD_END=$(date +"%s")
+	DIFF=$(($BUILD_END - $BUILD_START))
+}
+
+# Telegram Function
+
+telegram_curl() {
+	local ACTION=${1}
+	shift
+	local HTTP_REQUEST=${1}
+	shift
+	if [ "$HTTP_REQUEST" != "POST_FILE" ]; then
+		curl -s -X $HTTP_REQUEST "https://api.telegram.org/bot$BOT_API_KEY/$ACTION" "$@" | jq .
+	else
+		curl -s "https://api.telegram.org/bot$BOT_API_KEY/$ACTION" "$@" | jq .
+	fi
+}
+
+telegram_main() {
+	local ACTION=${1}
+	local HTTP_REQUEST=${2}
+	local CURL_ARGUMENTS=()
+	while [ "${#}" -gt 0 ]; do
+		case "${1}" in
+			--animation | --audio | --document | --photo | --video )
+				local CURL_ARGUMENTS+=(-F $(echo "${1}" | sed 's/--//')=@"${2}")
+				shift
+				;;
+			--* )
+				if [ "$HTTP_REQUEST" != "POST_FILE" ]; then
+					local CURL_ARGUMENTS+=(-d $(echo "${1}" | sed 's/--//')="${2}")
+				else
+					local CURL_ARGUMENTS+=(-F $(echo "${1}" | sed 's/--//')="${2}")
+				fi
+				shift
+				;;
+		esac
+		shift
+	done
+	telegram_curl "$ACTION" "$HTTP_REQUEST" "${CURL_ARGUMENTS[@]}"
+}
+
+telegram_curl_get() {
+	local ACTION=${1}
+	shift
+	telegram_main "$ACTION" GET "$@"
+}
+
+telegram_curl_post() {
+	local ACTION=${1}
+	shift
+	telegram_main "$ACTION" POST "$@"
+}
+
+telegram_curl_post_file() {
+	local ACTION=${1}
+	shift
+	telegram_main "$ACTION" POST_FILE "$@"
+}
+
+tg_send_message() {
+	telegram_main sendMessage POST "$@"
+}
+
+tg_edit_message_text() {
+	telegram_main editMessageText POST "$@"
+}
+
+tg_send_document() {
+	telegram_main sendDocument POST_FILE "$@"
+}
+
+# Build status checker
+function statusBuild() {
+    if [[ $retVal -eq 8 ]]; then
+        build_message "Build Aborted 😡 with Code Exit ${retVal}, BRANCH_MANIFEST not set on jenkins.
+
+Total time elapsed: $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
+        tg_send_message --chat_id "$CHAT_ID_SECOND" --text "Build Aborted 💔 with Code Exit ${retVal}.
+Check channel for more info.
+Sudah kubilang yang teliti 😡"
+        echo "Build Aborted"
+        tg_send_document --chat_id "$CHAT_ID" --document "$BUILDLOG" --reply_to_message_id "$CI_MESSAGE_ID"
+        LOGTRIM="$CDIR/out/log_trimmed.log"
+        sed -n '/FAILED:/,//p' $BUILDLOG &> $LOGTRIM
+        tg_send_document --chat_id "$CHAT_ID" --document "$LOGTRIM" --reply_to_message_id "$CI_MESSAGE_ID"
+        exit $retVal
+    fi
+    if [[ $retVal -eq 3 ]]; then
+        build_message "Build Aborted 😤 with Code Exit ${retVal}, SF_PASS_RELEASE not set on jenkins.
+
+Total time elapsed: $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
+        tg_send_message --chat_id "$CHAT_ID_SECOND" --text "Build Aborted 💔 with Code Exit ${retVal}.
+Check channel for more info"
+        echo "Build Aborted"
+        tg_send_document --chat_id "$CHAT_ID" --document "$BUILDLOG" --reply_to_message_id "$CI_MESSAGE_ID"
+        LOGTRIM="$CDIR/out/log_trimmed.log"
+        sed -n '/FAILED:/,//p' $BUILDLOG &> $LOGTRIM
+        tg_send_document --chat_id "$CHAT_ID" --document "$LOGTRIM" --reply_to_message_id "$CI_MESSAGE_ID"
+        exit $retVal
+    fi
+    if [[ $retVal -eq 5 ]]; then
+        build_message "Build Aborted 😑 with Code Exit ${retVal}, SF_PASS_TEST not set on jenkins.
+
+Total time elapsed: $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
+        tg_send_message --chat_id "$CHAT_ID_SECOND" --text "Build Aborted 💔 with Code Exit ${retVal}.
+Check channel for more info"
+        echo "Build Aborted"
+        tg_send_document --chat_id "$CHAT_ID" --document "$BUILDLOG" --reply_to_message_id "$CI_MESSAGE_ID"
+        LOGTRIM="$CDIR/out/log_trimmed.log"
+        sed -n '/FAILED:/,//p' $BUILDLOG &> $LOGTRIM
+        tg_send_document --chat_id "$CHAT_ID" --document "$LOGTRIM" --reply_to_message_id "$CI_MESSAGE_ID"
+        exit $retVal
+    fi
+    if [[ $retVal -eq 141 ]]; then
+        build_message "Build Aborted 👎 with Code Exit ${retVal}, See log.
+
+Total time elapsed: $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
+        tg_send_message --chat_id "$CHAT_ID_SECOND" --text "Build Aborted 💔 with Code Exit ${retVal}.
+Check channel for more info"
+        echo "Build Aborted"
+        tg_send_document --chat_id "$CHAT_ID" --document "$BUILDLOG" --reply_to_message_id "$CI_MESSAGE_ID"
+        LOGTRIM="$CDIR/out/log_trimmed.log"
+        sed -n '/FAILED:/,//p' $BUILDLOG &> $LOGTRIM
+        tg_send_document --chat_id "$CHAT_ID" --document "$LOGTRIM" --reply_to_message_id "$CI_MESSAGE_ID"
+        exit $retVal
+    fi
+    if [[ $retVal -ne 0 ]]; then
+        build_message "Build Error 💔 with Code Exit ${retVal}, See log.
+
+Total time elapsed: $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
+        tg_send_message --chat_id "$CHAT_ID_SECOND" --text "Build Error 💔 with Code Exit ${retVal}.
+Check channel for more info"
+        echo "Build Error"
+        tg_send_document --chat_id "$CHAT_ID" --document "$BUILDLOG" --reply_to_message_id "$CI_MESSAGE_ID"
+        LOGTRIM="$CDIR/out/log_trimmed.log"
+        sed -n '/FAILED:/,//p' $BUILDLOG &> $LOGTRIM
+        tg_send_document --chat_id "$CHAT_ID" --document "$LOGTRIM" --reply_to_message_id "$CI_MESSAGE_ID"
+        exit $retVal
+    fi
+    if [ "$target_command" = "komodo" ]; then
+       OTA=$(find $OUT -name "$ROM_NAME-*json")
+       tg_send_document --chat_id "$CHAT_ID" --document "$OTA" --reply_to_message_id "$CI_MESSAGE_ID"
+    fi
+    build_message "Build success ❤️"
+    tg_send_message --chat_id "$CHAT_ID_SECOND" --text "Build Success ❤️.
+Check channel for more info"
+}
+
+# Progress
+progress() {
+ 
+    echo "BOTLOG: Build tracker process is running..."
+    sleep 10;
+
+    while [ 1 ]; do
+        if [[ ${retVal} -ne 0 ]]; then
+            exit ${retVal}
+        fi
+
+        # Get latest percentage
+        PERCENTAGE=$(cat $BUILDLOG | tail -n 1 | awk '{ print $2 }')
+        NUMBER=$(echo ${PERCENTAGE} | sed 's/[^0-9]*//g')
+
+        # Report percentage to the $CHAT_ID
+        if [ "${NUMBER}" != "" ]; then
+            if [ "${NUMBER}" -le  "99" ]; then
+                if [ "${NUMBER}" != "${NUMBER_OLD}" ] && [ "$NUMBER" != "" ] && ! cat $BUILDLOG | tail  -n 1 | grep "glob" > /dev/null && ! cat $BUILDLOG | tail  -n 1 | grep "including" > /dev/null && ! cat $BUILDLOG | tail  -n 1 | grep "soong" > /dev/null && ! cat $BUILDLOG | tail  -n 1 | grep "finishing" > /dev/null; then
+                echo -e "BOTLOG: Percentage changed to ${NUMBER}%"
+                    build_message "🛠️ Building... ${NUMBER}%" > /dev/null
+                fi
+            NUMBER_OLD=${NUMBER}
+            fi
+            if [ "$NUMBER" -eq "99" ] && [ "$NUMBER" != "" ] && ! cat $BUILDLOG | tail  -n 1 | grep "glob" > /dev/null && ! cat $BUILDLOG | tail  -n 1 | grep "including" > /dev/null && ! cat $BUILDLOG | tail  -n 1 | grep "soong" > /dev/null && ! cat $BUILDLOG | tail -n 1 | grep "finishing" > /dev/null; then
+                echo "BOTLOG: Build tracker process ended"
+                break
+            fi
+        fi
+ 
+        sleep 10
+    done
+    return 0
+}
+
+build_message() {
+	if [ "$CI_MESSAGE_ID" = "" ]; then
+CI_MESSAGE_ID=$(tg_send_message --chat_id "$CHAT_ID" --text "<b>====== Starting Build Komodo 🦎 ======</b>
+<b>ROM Name:</b> <code>${ROM_NAME}</code>
+<b>Branch:</b> <code>${BRANCH_MANIFEST}</code>
+<b>Device:</b> <code>${DEVICE}</code>
+<b>Type:</b> <code>$build_type</code>
+<b>Command:</b> <code>$target_command</code>
+<b>Cleaning:</b> <code>$make_clean</code>
+<b>Job:</b> <code>$jobs Paralel processing</code>
+<b>Upload to SF:</b> <code>$upload_to_sf</code>
+<b>Running on:</b> <code>$server</code>
+<b>Started at</b> <code>$DATE</code>
+
+<b>Status:</b> $1" --parse_mode "html" | jq .result.message_id)
+	else
+tg_edit_message_text --chat_id "$CHAT_ID" --message_id "$CI_MESSAGE_ID" --text "<b>====== Starting Build Komodo 🦎 ======</b>
+<b>ROM Name:</b> <code>${ROM_NAME}</code>
+<b>Branch:</b> <code>${BRANCH_MANIFEST}</code>
+<b>Device:</b> <code>${DEVICE}</code>
+<b>Type:</b> <code>$build_type</code>
+<b>Command:</b> <code>$target_command</code>
+<b>Cleaning:</b> <code>$make_clean</code>
+<b>Job:</b> <code>$jobs Paralel processing</code>
+<b>Upload to SF:</b> <code>$upload_to_sf</code>
+<b>Running on:</b> <code>$server</code>
+<b>Started at</b> <code>$DATE</code>
+
+<b>Status:</b> $1" --parse_mode "html"
+	fi
+}
+################################################################
 
 # Verify important
 if [ "$BOT_API_KEY" = "" ]; then
