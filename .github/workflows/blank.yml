@@ -1,0 +1,22 @@
+name: Build Jenkins Script
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compile the script
+        run: |
+          apt update && sudo apt install --assume-yes gcc shc
+          cd jenkins
+          shc -f masak.sh
+      - name: Upload compeled file
+        uses: actions/upload-artifact@v2
+        with:
+          name: compiled-masak
+          path: "masak*"
